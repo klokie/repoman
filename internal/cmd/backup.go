@@ -147,6 +147,21 @@ func runBackup(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if excludes := m.Defaults.BackupExclude; len(excludes) > 0 {
+		var kept []string
+		dropped := 0
+		for _, p := range paths {
+			if ok, pattern := matchesSkip(manifest.Contract(p), excludes); ok {
+				fmt.Printf("  %s %-36s %s\n", dim("-"), manifest.Contract(p), dim("excluded by "+pattern))
+				dropped++
+				continue
+			}
+			kept = append(kept, p)
+		}
+		paths = kept
+		_ = dropped
+	}
+
 	if len(paths) == 0 {
 		fmt.Println("Nothing to back up — no untracked local state found")
 		return nil
@@ -274,10 +289,14 @@ func splitNestedRepos(dir string) (keep, skipped []string) {
 	return keep, skipped
 }
 
-// matchesSkip reports whether a repo name matches any skip glob.
+// matchesSkip reports whether a name matches any glob. Patterns ending in /*
+// also match everything deeper, which filepath.Match does not do on its own.
 func matchesSkip(name string, patterns []string) (bool, string) {
 	for _, p := range patterns {
 		if ok, _ := filepath.Match(p, name); ok {
+			return true, p
+		}
+		if strings.HasSuffix(p, "/*") && strings.HasPrefix(name, strings.TrimSuffix(p, "*")) {
 			return true, p
 		}
 	}
