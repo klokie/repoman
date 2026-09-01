@@ -54,7 +54,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Pulling %d repos on %s\n\n", len(repos), hostname)
 	results := forEachRepo(repos, pullJobs, func(r manifest.Repo) result {
-		path := m.PathFor(r)
+		path := m.PathFor(r, hostname)
 		if _, err := os.Stat(path); err != nil {
 			return result{Skipped: true, Message: "not cloned — run 'repoman clone'"}
 		}

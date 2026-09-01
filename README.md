@@ -99,11 +99,16 @@ path = "~/src/my-project"
 hosts = ["oleander", "gatekeeper"]
 tags = ["work"]
 status = "active"
+
+  [repos.paths]
+  oleander = "~/Sites/my-project"   # this host keeps it somewhere else
 ```
 
 Each repo lists which `hosts` it belongs on. `repoman status` only shows repos
 for the current machine. Omit `path` and the repo resolves to `<defaults.root>/<name>`,
-which keeps an entry portable across machines with different roots.
+which keeps an entry portable across machines with different roots. When one
+machine keeps a repo somewhere else, `[repos.paths]` records that per host —
+`init` fills it in automatically — so the others do not report it as missing.
 
 `REPOMAN_CONFIG` overrides the config directory; `REPOMAN_HOST` overrides the
 detected hostname (useful for dry runs and testing).

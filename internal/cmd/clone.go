@@ -67,7 +67,7 @@ func cloneURL(args []string) error {
 		return err
 	}
 
-	m.Upsert(manifest.Repo{
+	_, _, _ = m.Upsert(manifest.Repo{
 		Name:   name,
 		Remote: url,
 		Hosts:  []string{host.Name()},
@@ -93,7 +93,7 @@ func cloneMissing() error {
 		if r.IsArchived() {
 			continue
 		}
-		if _, err := os.Stat(m.PathFor(r)); err != nil {
+		if _, err := os.Stat(m.PathFor(r, hostname)); err != nil {
 			missing = append(missing, r)
 		}
 	}
@@ -107,7 +107,7 @@ func cloneMissing() error {
 		if r.Remote == "" {
 			return result{Skipped: true, Message: "no remote recorded"}
 		}
-		dest := m.PathFor(r)
+		dest := m.PathFor(r, hostname)
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return result{Err: err}
 		}

@@ -28,6 +28,11 @@ type Repo struct {
 	Hosts  []string `toml:"hosts"`
 	Tags   []string `toml:"tags,omitempty"`
 	Status string   `toml:"status,omitempty"`
+	// Paths overrides the location per host, for the repos that do not sit at
+	// <root>/<name> everywhere — werlabs-js is ~/src/werlabs-js on gatekeeper
+	// but ~/Sites/werlabs-js on oleander. Path (no host) still works as a
+	// manifest-wide override.
+	Paths map[string]string `toml:"paths,omitempty"`
 }
 
 // Expand resolves a leading ~/ against the user's home directory.
@@ -80,13 +85,40 @@ func (m Manifest) RootDir() string {
 	return Expand(root)
 }
 
-// PathFor resolves where a repo lives on this host: its explicit path if set,
-// otherwise <default root>/<name>.
-func (m Manifest) PathFor(r Repo) string {
+// PathFor resolves where a repo lives on a given host: the host's own override
+// first, then a manifest-wide path, then <default root>/<name>.
+func (m Manifest) PathFor(r Repo, hostname string) string {
+	if p := r.PathOn(hostname); p != "" {
+		return Expand(p)
+	}
 	if p := r.ExpandedPath(); p != "" {
 		return p
 	}
 	return filepath.Join(m.RootDir(), r.Name)
+}
+
+// PathOn returns the host-specific path override, if any.
+func (r Repo) PathOn(hostname string) string {
+	for h, p := range r.Paths {
+		if strings.EqualFold(h, hostname) {
+			return p
+		}
+	}
+	return ""
+}
+
+// SetPathOn records where this repo lives on a host.
+func (r *Repo) SetPathOn(hostname, path string) {
+	if r.Paths == nil {
+		r.Paths = map[string]string{}
+	}
+	for h := range r.Paths {
+		if strings.EqualFold(h, hostname) {
+			r.Paths[h] = path
+			return
+		}
+	}
+	r.Paths[strings.ToLower(hostname)] = path
 }
 
 func (m Manifest) ReposForHost(hostname string) []Repo {
@@ -127,12 +159,14 @@ func (m Manifest) Find(name string) int {
 }
 
 // Upsert adds a repo, or merges it into an existing entry of the same name.
-// Returns whether the repo was new, and whether an existing entry gained a host.
-func (m *Manifest) Upsert(r Repo) (added, hostAdded bool) {
+// Reports whether the repo was new, whether an existing entry gained a host,
+// and whether anything at all changed (a path or backfilled remote counts, and
+// is why re-running init on a host can still be worth saving).
+func (m *Manifest) Upsert(r Repo) (added, hostAdded, changed bool) {
 	i := m.Find(r.Name)
 	if i < 0 {
 		m.Repos = append(m.Repos, r)
-		return true, false
+		return true, false, true
 	}
 	existing := &m.Repos[i]
 	for _, h := range r.Hosts {
@@ -141,10 +175,17 @@ func (m *Manifest) Upsert(r Repo) (added, hostAdded bool) {
 			hostAdded = true
 		}
 	}
-	if existing.Remote == "" {
+	if existing.Remote == "" && r.Remote != "" {
 		existing.Remote = r.Remote
+		changed = true
 	}
-	return false, hostAdded
+	for h, p := range r.Paths {
+		if existing.PathOn(h) != p {
+			existing.SetPathOn(h, p)
+			changed = true
+		}
+	}
+	return false, hostAdded, hostAdded || changed
 }
 
 // RemoveHost drops a host from a repo. Returns false if the repo isn't found.

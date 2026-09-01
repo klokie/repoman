@@ -8,7 +8,7 @@ import (
 func TestUpsertAddsHostInsteadOfDuplicating(t *testing.T) {
 	m := Manifest{Repos: []Repo{{Name: "repoman", Remote: "git@github.com:klokie/repoman.git", Hosts: []string{"gatekeeper"}}}}
 
-	added, hostAdded := m.Upsert(Repo{Name: "repoman", Hosts: []string{"oleander"}})
+	added, hostAdded, _ := m.Upsert(Repo{Name: "repoman", Hosts: []string{"oleander"}})
 	if added || !hostAdded {
 		t.Fatalf("second host: got added=%v hostAdded=%v, want false/true", added, hostAdded)
 	}
@@ -19,11 +19,11 @@ func TestUpsertAddsHostInsteadOfDuplicating(t *testing.T) {
 		t.Error("host match should be case-insensitive")
 	}
 
-	if _, hostAdded := m.Upsert(Repo{Name: "repoman", Hosts: []string{"oleander"}}); hostAdded {
+	if _, hostAdded, changed := m.Upsert(Repo{Name: "repoman", Hosts: []string{"oleander"}}); hostAdded || changed {
 		t.Error("re-running init on the same host should be a no-op")
 	}
 
-	if added, _ := m.Upsert(Repo{Name: "hermes", Hosts: []string{"metalmark"}}); !added {
+	if added, _, _ := m.Upsert(Repo{Name: "hermes", Hosts: []string{"metalmark"}}); !added {
 		t.Error("a new repo should be added")
 	}
 }
@@ -38,14 +38,42 @@ func TestUpsertBackfillsMissingRemote(t *testing.T) {
 
 func TestPathForFallsBackToRoot(t *testing.T) {
 	m := Manifest{Defaults: Defaults{Root: "~/code"}}
-	got := m.PathFor(Repo{Name: "repoman"})
+	got := m.PathFor(Repo{Name: "repoman"}, "gatekeeper")
 	if want := filepath.Join(Expand("~/code"), "repoman"); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 
-	explicit := m.PathFor(Repo{Name: "repoman", Path: "~/src/_archived/repoman"})
+	explicit := m.PathFor(Repo{Name: "repoman", Path: "~/src/_archived/repoman"}, "gatekeeper")
 	if want := Expand("~/src/_archived/repoman"); explicit != want {
 		t.Errorf("explicit path: got %q, want %q", explicit, want)
+	}
+}
+
+// The same repo lives in a different directory on each machine; one global
+// path cannot express that, and getting it wrong reports phantom "missing".
+func TestPathForPrefersHostOverride(t *testing.T) {
+	m := Manifest{Defaults: Defaults{Root: "~/src"}}
+	r := Repo{Name: "werlabs-js", Paths: map[string]string{"oleander": "~/Sites/werlabs-js"}}
+
+	if got, want := m.PathFor(r, "Oleander"), Expand("~/Sites/werlabs-js"); got != want {
+		t.Errorf("oleander: got %q, want %q", got, want)
+	}
+	if got, want := m.PathFor(r, "gatekeeper"), Expand("~/src/werlabs-js"); got != want {
+		t.Errorf("gatekeeper should fall back to the root: got %q, want %q", got, want)
+	}
+}
+
+func TestUpsertMergesHostPaths(t *testing.T) {
+	m := Manifest{Repos: []Repo{{Name: "x", Hosts: []string{"gatekeeper"}}}}
+	incoming := Repo{Name: "x", Hosts: []string{"oleander"}}
+	incoming.SetPathOn("oleander", "~/Sites/x")
+	m.Upsert(incoming)
+
+	if got := m.Repos[0].PathOn("oleander"); got != "~/Sites/x" {
+		t.Errorf("got %q, want ~/Sites/x", got)
+	}
+	if got := m.Repos[0].PathOn("gatekeeper"); got != "" {
+		t.Errorf("other hosts should be untouched, got %q", got)
 	}
 }
 
@@ -80,7 +108,7 @@ func TestSaveLoadRoundTripSorts(t *testing.T) {
 	m := Manifest{
 		Defaults: Defaults{Root: "~/src", AssetsRoot: "~/projects"},
 		Repos: []Repo{
-			{Name: "zebra", Hosts: []string{"metalmark"}, Status: "active"},
+			{Name: "zebra", Hosts: []string{"metalmark"}, Status: "active", Paths: map[string]string{"metalmark": "~/work/zebra"}},
 			{Name: "alpha", Hosts: []string{"oleander", "gatekeeper"}, Status: "archived"},
 		},
 	}
@@ -99,5 +127,8 @@ func TestSaveLoadRoundTripSorts(t *testing.T) {
 	}
 	if got.Defaults.AssetsRoot != "~/projects" {
 		t.Error("defaults did not round-trip")
+	}
+	if p := got.Repos[1].PathOn("metalmark"); p != "~/work/zebra" {
+		t.Errorf("per-host paths did not round-trip through TOML, got %q", p)
 	}
 }

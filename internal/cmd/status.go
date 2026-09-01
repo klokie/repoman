@@ -70,7 +70,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		wg.Add(1)
 		go func(i int, repo manifest.Repo) {
 			defer wg.Done()
-			statuses[i] = getRepoStatus(m, repo, remote)
+			statuses[i] = getRepoStatus(m, repo, hostname, remote)
 		}(i, repo)
 	}
 	wg.Wait()
@@ -95,10 +95,10 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 // getRepoStatus inspects the working copy. For another host's repos there is
 // nothing local to inspect, so only the manifest's view is reported.
-func getRepoStatus(m manifest.Manifest, repo manifest.Repo, remote bool) repoStatus {
+func getRepoStatus(m manifest.Manifest, repo manifest.Repo, hostname string, remote bool) repoStatus {
 	s := repoStatus{
 		Name:   repo.Name,
-		Path:   m.PathFor(repo),
+		Path:   m.PathFor(repo, hostname),
 		Status: repo.Status,
 	}
 	if remote {

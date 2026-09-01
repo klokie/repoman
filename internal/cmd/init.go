@@ -51,7 +51,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	hostname := host.Name()
-	var added, joined int
+	var added, joined, updated int
 
 	for _, root := range roots {
 		found, err := scanDir(root, hostname)
@@ -62,12 +62,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		for _, repo := range found {
-			// Drop the path when it is just <root>/<name>, so the entry stays
-			// portable to a host whose default root differs.
+			// A repo sitting at <root>/<name> needs no path at all; anywhere
+			// else is recorded per host, since the same repo lives at
+			// ~/src/x on one machine and ~/Sites/x on another.
 			if repo.ExpandedPath() == filepath.Join(m.RootDir(), repo.Name) {
 				repo.Path = ""
+			} else {
+				repo.SetPathOn(hostname, repo.Path)
+				repo.Path = ""
 			}
-			isNew, gainedHost := m.Upsert(repo)
+			isNew, gainedHost, changed := m.Upsert(repo)
 			switch {
 			case isNew:
 				added++
@@ -75,24 +79,27 @@ func runInit(cmd *cobra.Command, args []string) error {
 			case gainedHost:
 				joined++
 				fmt.Printf("  %s %s (now also on %s)\n", yellow("~"), repo.Name, hostname)
+			case changed:
+				updated++
+				fmt.Printf("  %s %s (path on %s: %s)\n", yellow("~"), repo.Name, hostname, repo.PathOn(hostname))
 			}
 		}
 	}
 
-	if added == 0 && joined == 0 {
+	if added == 0 && joined == 0 && updated == 0 {
 		fmt.Printf("Nothing new — manifest already describes every repo found on %s\n", hostname)
 		return nil
 	}
 
 	if initDryRun {
-		fmt.Printf("\ndry run: %d new, %d newly on %s (manifest unchanged)\n", added, joined, hostname)
+		fmt.Printf("\ndry run: %d new, %d newly on %s, %d updated (manifest unchanged)\n", added, joined, hostname, updated)
 		return nil
 	}
 
 	if err := manifest.Save(m); err != nil {
 		return fmt.Errorf("saving manifest: %w", err)
 	}
-	fmt.Printf("\n%s: %d new, %d newly on %s, %d total\n", manifest.Path(), added, joined, hostname, len(m.Repos))
+	fmt.Printf("\n%s: %d new, %d newly on %s, %d updated, %d total\n", manifest.Path(), added, joined, hostname, updated, len(m.Repos))
 	return nil
 }
 
