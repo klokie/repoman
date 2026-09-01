@@ -41,16 +41,12 @@ func runSyncManifest(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Syncing %s\n", dir)
-	if err := gitx.Run(dir, "pull", "--rebase", "--autostash"); err != nil {
-		return fmt.Errorf("pulling manifest: %w", err)
-	}
 
-	// --autostash can leave conflict markers in the file while still exiting 0,
-	// and committing that ships a manifest no host can parse. Refuse instead.
-	if _, err := manifest.Load(); err != nil {
-		return fmt.Errorf("manifest is not parseable after the pull — resolve it by hand, then re-run: %w", err)
-	}
-
+	// Commit before pulling. --autostash would apply local edits on top of the
+	// rebased file and can leave conflict markers behind while still exiting 0,
+	// which is how an unparseable manifest once reached every host. Committing
+	// first turns the same situation into an ordinary rebase git can either
+	// merge or halt on.
 	if gitx.IsDirty(dir) {
 		if err := gitx.Run(dir, "add", "-A"); err != nil {
 			return err
@@ -62,6 +58,19 @@ func runSyncManifest(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  %s committed local changes\n", green("✓"))
 	} else {
 		fmt.Printf("  %s no local changes\n", dim("·"))
+	}
+
+	if err := gitx.Run(dir, "pull", "--rebase"); err != nil {
+		if abortErr := gitx.Run(dir, "rebase", "--abort"); abortErr == nil {
+			return fmt.Errorf("the manifest changed on another host in a way git cannot merge — "+
+				"resolve it in %s by hand, then re-run: %w", dir, err)
+		}
+		return fmt.Errorf("pulling manifest: %w", err)
+	}
+
+	// Belt and braces: never push something no host can parse.
+	if _, err := manifest.Load(); err != nil {
+		return fmt.Errorf("manifest is not parseable after the pull — resolve it by hand, then re-run: %w", err)
 	}
 
 	if err := gitx.Run(dir, "push"); err != nil {
