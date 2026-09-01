@@ -81,7 +81,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 				fmt.Printf("  %s %s (now also on %s)\n", yellow("~"), repo.Name, hostname)
 			case changed:
 				updated++
-				fmt.Printf("  %s %s (path on %s: %s)\n", yellow("~"), repo.Name, hostname, repo.PathOn(hostname))
+				what := "remote"
+				if p := repo.PathOn(hostname); p != "" {
+					what = "path on " + hostname + ": " + p
+				}
+				fmt.Printf("  %s %s (%s)\n", yellow("~"), repo.Name, what)
 			}
 		}
 	}
