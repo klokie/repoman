@@ -16,7 +16,7 @@ import (
 // the base, and a removal on either side wins over an add.
 func Merge3(base, ours, theirs Manifest) Manifest {
 	out := Manifest{Defaults: ours.Defaults}
-	if out.Defaults == (Defaults{}) {
+	if out.Defaults.IsZero() {
 		out.Defaults = theirs.Defaults
 	}
 

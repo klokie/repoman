@@ -16,9 +16,19 @@ type Manifest struct {
 }
 
 type Defaults struct {
-	Root       string `toml:"root"`
-	AssetsRoot string `toml:"assets_root,omitempty"`
-	ResticRepo string `toml:"restic_repo,omitempty"`
+	Root               string `toml:"root"`
+	AssetsRoot         string `toml:"assets_root,omitempty"`
+	ResticRepo         string `toml:"restic_repo,omitempty"`
+	ResticPasswordFile string `toml:"restic_password_file,omitempty"`
+	// ExtraPaths are backed up as-is: state that belongs to no repo, like
+	// ~/.hermes. Paths absent on a given host are skipped silently, so one
+	// list can serve every machine.
+	ExtraPaths []string `toml:"extra_paths,omitempty"`
+	// BackupSkip lists repo-name globs to leave out of `repoman backup`.
+	// Employer credentials do not belong on personal storage, however good the
+	// intent, so the exclusion lives in the shared manifest rather than in a
+	// flag someone has to remember.
+	BackupSkip []string `toml:"backup_skip,omitempty"`
 }
 
 type Repo struct {
@@ -77,6 +87,12 @@ func (r Repo) ExpandedPath() string {
 }
 
 // RootDir is the default clone root, expanded. Defaults to ~/src.
+// IsZero reports whether no defaults were set at all.
+func (d Defaults) IsZero() bool {
+	return d.Root == "" && d.AssetsRoot == "" && d.ResticRepo == "" &&
+		d.ResticPasswordFile == "" && len(d.ExtraPaths) == 0 && len(d.BackupSkip) == 0
+}
+
 func (m Manifest) RootDir() string {
 	root := m.Defaults.Root
 	if root == "" {
