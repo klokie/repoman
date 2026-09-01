@@ -205,6 +205,10 @@ func runBackup(cmd *cobra.Command, args []string) error {
 	resticArgs := []string{
 		"backup", "--files-from-verbatim", list.Name(),
 		"--tag", "repoman", "--tag", "host:" + hostname,
+		// Pin the snapshot host to repoman's identity: restic would otherwise
+		// record the OS hostname, which on these machines drifts to
+		// "mac.lan" or "Gatekeeper" and makes `restic snapshots --host` useless.
+		"--host", hostname,
 	}
 	for _, d := range neverBackup {
 		resticArgs = append(resticArgs, "--exclude", d)
