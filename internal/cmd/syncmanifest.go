@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/klokie/repoman/internal/gitx"
@@ -24,6 +25,8 @@ the remote, commits any local manifest changes, and pushes them.`,
 }
 
 var syncInitRemote string
+
+const manifestFile = "manifest.toml"
 
 func init() {
 	syncManifestCmd.Flags().StringVar(&syncInitRemote, "init", "", "attach the config dir to this git remote (first run on a machine)")
@@ -61,11 +64,15 @@ func runSyncManifest(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := gitx.Run(dir, "pull", "--rebase"); err != nil {
-		if abortErr := gitx.Run(dir, "rebase", "--abort"); abortErr == nil {
-			return fmt.Errorf("the manifest changed on another host in a way git cannot merge — "+
-				"resolve it in %s by hand, then re-run: %w", dir, err)
+		if resolved, rerr := resolveManifestConflict(dir); rerr != nil {
+			gitx.Run(dir, "rebase", "--abort")
+			return fmt.Errorf("the manifest changed on another host in a way repoman could not merge — "+
+				"resolve it in %s by hand, then re-run: %w", dir, rerr)
+		} else if !resolved {
+			gitx.Run(dir, "rebase", "--abort")
+			return fmt.Errorf("pulling manifest: %w", err)
 		}
-		return fmt.Errorf("pulling manifest: %w", err)
+		fmt.Printf("  %s merged a concurrent edit from another host\n", green("✓"))
 	}
 
 	// Belt and braces: never push something no host can parse.
@@ -78,6 +85,62 @@ func runSyncManifest(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("  %s pushed — other hosts get it with 'repoman sync-manifest'\n", green("✓"))
 	return nil
+}
+
+// resolveManifestConflict settles a conflicted rebase of manifest.toml by
+// merging the three index stages on meaning rather than text. Two hosts editing
+// the same `hosts = [...]` line is the normal case here, not an exception, so
+// leaving it to git would mean hand-resolving a conflict on nearly every
+// concurrent assign or unassign. Reports whether it resolved anything.
+func resolveManifestConflict(dir string) (bool, error) {
+	conflicted, err := gitx.Output(dir, "diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		return false, err
+	}
+	files := []string{}
+	for _, f := range strings.Split(conflicted, "\n") {
+		if f = strings.TrimSpace(f); f != "" {
+			files = append(files, f)
+		}
+	}
+	if len(files) != 1 || files[0] != manifestFile {
+		return false, nil // something else is wrong; let the caller bail out
+	}
+
+	stage := func(n string) (manifest.Manifest, error) {
+		out, err := gitx.Output(dir, "show", n+":"+manifestFile)
+		if err != nil {
+			return manifest.Manifest{}, nil // an empty stage is an empty manifest
+		}
+		return manifest.Parse([]byte(out))
+	}
+	base, err := stage(":1")
+	if err != nil {
+		return false, fmt.Errorf("parsing merge base: %w", err)
+	}
+	ours, err := stage(":2")
+	if err != nil {
+		return false, fmt.Errorf("parsing the remote side: %w", err)
+	}
+	theirs, err := stage(":3")
+	if err != nil {
+		return false, fmt.Errorf("parsing the local side: %w", err)
+	}
+
+	data, err := manifest.Encode(manifest.Merge3(base, ours, theirs))
+	if err != nil {
+		return false, err
+	}
+	if err := os.WriteFile(filepath.Join(dir, manifestFile), data, 0o644); err != nil {
+		return false, err
+	}
+	if err := gitx.Run(dir, "add", manifestFile); err != nil {
+		return false, err
+	}
+	if err := gitx.RunEnv(dir, []string{"GIT_EDITOR=true"}, "rebase", "--continue"); err != nil {
+		return false, fmt.Errorf("continuing the rebase: %w", err)
+	}
+	return true, nil
 }
 
 // appendExclude adds a pattern to .git/info/exclude (local-only ignores).

@@ -3,6 +3,7 @@ package gitx
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -63,4 +64,18 @@ func NameFromURL(url string) string {
 		u = u[i+1:]
 	}
 	return u
+}
+
+// RunEnv runs git with extra environment variables, for the commands that would
+// otherwise open an editor.
+func RunEnv(dir string, env []string, args ...string) error {
+	c := exec.Command("git", args...)
+	c.Dir = dir
+	c.Env = append(os.Environ(), env...)
+	var stderr strings.Builder
+	c.Stderr = &stderr
+	if err := c.Run(); err != nil {
+		return fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
 }
