@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -16,6 +17,7 @@ type Manifest struct {
 
 type Defaults struct {
 	Root       string `toml:"root"`
+	AssetsRoot string `toml:"assets_root,omitempty"`
 	ResticRepo string `toml:"restic_repo,omitempty"`
 }
 
@@ -28,39 +30,156 @@ type Repo struct {
 	Status string   `toml:"status,omitempty"`
 }
 
-func (r Repo) ExpandedPath() string {
-	p := r.Path
-	if p == "" {
-		return ""
-	}
+// Expand resolves a leading ~/ against the user's home directory.
+func Expand(p string) string {
 	if strings.HasPrefix(p, "~/") {
 		home, _ := os.UserHomeDir()
-		p = filepath.Join(home, p[2:])
+		return filepath.Join(home, p[2:])
 	}
 	return p
+}
+
+// Contract is the inverse of Expand: absolute paths under $HOME become ~/…
+func Contract(p string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return p
+	}
+	if rel, err := filepath.Rel(home, p); err == nil && !strings.HasPrefix(rel, "..") {
+		return filepath.Join("~", rel)
+	}
+	return p
+}
+
+func (r Repo) HasHost(hostname string) bool {
+	for _, h := range r.Hosts {
+		if strings.EqualFold(h, hostname) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r Repo) IsArchived() bool { return r.Status == "archived" }
+
+// ExpandedPath returns the repo's own path only; prefer Manifest.PathFor, which
+// falls back to the default root when a repo has no explicit path.
+func (r Repo) ExpandedPath() string {
+	if r.Path == "" {
+		return ""
+	}
+	return Expand(r.Path)
+}
+
+// RootDir is the default clone root, expanded. Defaults to ~/src.
+func (m Manifest) RootDir() string {
+	root := m.Defaults.Root
+	if root == "" {
+		root = "~/src"
+	}
+	return Expand(root)
+}
+
+// PathFor resolves where a repo lives on this host: its explicit path if set,
+// otherwise <default root>/<name>.
+func (m Manifest) PathFor(r Repo) string {
+	if p := r.ExpandedPath(); p != "" {
+		return p
+	}
+	return filepath.Join(m.RootDir(), r.Name)
 }
 
 func (m Manifest) ReposForHost(hostname string) []Repo {
 	var result []Repo
 	for _, r := range m.Repos {
-		for _, h := range r.Hosts {
-			if strings.EqualFold(h, hostname) {
-				result = append(result, r)
-				break
-			}
+		if r.HasHost(hostname) {
+			result = append(result, r)
 		}
 	}
 	return result
 }
 
-func Path() string {
-	configDir := os.Getenv("REPOMAN_CONFIG")
-	if configDir != "" {
-		return filepath.Join(configDir, "manifest.toml")
+// Hosts lists every host mentioned in the manifest, sorted.
+func (m Manifest) Hosts() []string {
+	seen := map[string]bool{}
+	var hosts []string
+	for _, r := range m.Repos {
+		for _, h := range r.Hosts {
+			k := strings.ToLower(h)
+			if !seen[k] {
+				seen[k] = true
+				hosts = append(hosts, k)
+			}
+		}
+	}
+	sort.Strings(hosts)
+	return hosts
+}
+
+// Find returns the index of a repo by name, or -1.
+func (m Manifest) Find(name string) int {
+	for i, r := range m.Repos {
+		if r.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// Upsert adds a repo, or merges it into an existing entry of the same name.
+// Returns whether the repo was new, and whether an existing entry gained a host.
+func (m *Manifest) Upsert(r Repo) (added, hostAdded bool) {
+	i := m.Find(r.Name)
+	if i < 0 {
+		m.Repos = append(m.Repos, r)
+		return true, false
+	}
+	existing := &m.Repos[i]
+	for _, h := range r.Hosts {
+		if !existing.HasHost(h) {
+			existing.Hosts = append(existing.Hosts, h)
+			hostAdded = true
+		}
+	}
+	if existing.Remote == "" {
+		existing.Remote = r.Remote
+	}
+	return false, hostAdded
+}
+
+// RemoveHost drops a host from a repo. Returns false if the repo isn't found.
+func (m *Manifest) RemoveHost(name, hostname string) bool {
+	i := m.Find(name)
+	if i < 0 {
+		return false
+	}
+	var kept []string
+	for _, h := range m.Repos[i].Hosts {
+		if !strings.EqualFold(h, hostname) {
+			kept = append(kept, h)
+		}
+	}
+	m.Repos[i].Hosts = kept
+	return true
+}
+
+func (m *Manifest) Sort() {
+	sort.Slice(m.Repos, func(i, j int) bool { return m.Repos[i].Name < m.Repos[j].Name })
+	for i := range m.Repos {
+		sort.Strings(m.Repos[i].Hosts)
+	}
+}
+
+// Dir is the config directory holding manifest.toml (REPOMAN_CONFIG overrides).
+func Dir() string {
+	if d := os.Getenv("REPOMAN_CONFIG"); d != "" {
+		return d
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "repoman", "manifest.toml")
+	return filepath.Join(home, ".config", "repoman")
 }
+
+func Path() string { return filepath.Join(Dir(), "manifest.toml") }
 
 func Exists() bool {
 	_, err := os.Stat(Path())
@@ -79,15 +198,25 @@ func Load() (Manifest, error) {
 	return m, nil
 }
 
+// Save writes the manifest atomically, sorted, so that two hosts editing it
+// produce diffs git can merge instead of whole-file churn.
 func Save(m Manifest) error {
+	m.Sort()
 	p := Path()
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	f, err := os.Create(p)
+	tmp, err := os.CreateTemp(filepath.Dir(p), ".manifest-*.toml")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return toml.NewEncoder(f).Encode(m)
+	defer os.Remove(tmp.Name())
+	if err := toml.NewEncoder(tmp).Encode(m); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), p)
 }
