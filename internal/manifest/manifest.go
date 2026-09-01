@@ -20,6 +20,9 @@ type Defaults struct {
 	AssetsRoot         string `toml:"assets_root,omitempty"`
 	ResticRepo         string `toml:"restic_repo,omitempty"`
 	ResticPasswordFile string `toml:"restic_password_file,omitempty"`
+	// ResticMirror is a second repo the snapshots are copied to — a drive that
+	// something else already carries offsite.
+	ResticMirror string `toml:"restic_mirror,omitempty"`
 	// ExtraPaths are backed up as-is: state that belongs to no repo, like
 	// ~/.hermes. Paths absent on a given host are skipped silently, so one
 	// list can serve every machine.
@@ -92,7 +95,7 @@ func (r Repo) ExpandedPath() string {
 // RootDir is the default clone root, expanded. Defaults to ~/src.
 // IsZero reports whether no defaults were set at all.
 func (d Defaults) IsZero() bool {
-	return d.Root == "" && d.AssetsRoot == "" && d.ResticRepo == "" &&
+	return d.Root == "" && d.AssetsRoot == "" && d.ResticRepo == "" && d.ResticMirror == "" &&
 		d.ResticPasswordFile == "" && len(d.ExtraPaths) == 0 && len(d.BackupSkip) == 0 && len(d.BackupExclude) == 0
 }
 
