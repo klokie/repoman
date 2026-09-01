@@ -45,6 +45,12 @@ func runSyncManifest(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("pulling manifest: %w", err)
 	}
 
+	// --autostash can leave conflict markers in the file while still exiting 0,
+	// and committing that ships a manifest no host can parse. Refuse instead.
+	if _, err := manifest.Load(); err != nil {
+		return fmt.Errorf("manifest is not parseable after the pull — resolve it by hand, then re-run: %w", err)
+	}
+
 	if gitx.IsDirty(dir) {
 		if err := gitx.Run(dir, "add", "-A"); err != nil {
 			return err
