@@ -95,6 +95,10 @@ func initManifestRepo(dir, remote string) error {
 		return err
 	}
 
+	if err := appendExclude(dir, "host"); err != nil {
+		return err
+	}
+
 	remoteHasMain := gitx.Run(dir, "fetch", "origin", "main") == nil
 	localHasManifest := manifest.Exists()
 

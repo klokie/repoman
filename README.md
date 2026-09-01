@@ -108,6 +108,12 @@ which keeps an entry portable across machines with different roots.
 `REPOMAN_CONFIG` overrides the config directory; `REPOMAN_HOST` overrides the
 detected hostname (useful for dry runs and testing).
 
+**Pin the host name.** macOS renames a Mac to `oleander-5` after a Bonjour name
+collision, which would file that machine's repos under a second identity. Run
+`repoman host oleander` once per machine; the pin lives in `<config>/host` and
+is excluded from the shared repo. `--from <old>` moves entries already filed
+under the wrong name.
+
 ### Sharing the manifest
 
 `~/.config/repoman` is itself a git repo pointed at a private remote.
