@@ -53,12 +53,12 @@ func TestPathForFallsBackToRoot(t *testing.T) {
 // path cannot express that, and getting it wrong reports phantom "missing".
 func TestPathForPrefersHostOverride(t *testing.T) {
 	m := Manifest{Defaults: Defaults{Root: "~/src"}}
-	r := Repo{Name: "werlabs-js", Paths: map[string]string{"oleander": "~/Sites/werlabs-js"}}
+	r := Repo{Name: "acme-api", Paths: map[string]string{"oleander": "~/Sites/acme-api"}}
 
-	if got, want := m.PathFor(r, "Oleander"), Expand("~/Sites/werlabs-js"); got != want {
+	if got, want := m.PathFor(r, "Oleander"), Expand("~/Sites/acme-api"); got != want {
 		t.Errorf("oleander: got %q, want %q", got, want)
 	}
-	if got, want := m.PathFor(r, "gatekeeper"), Expand("~/src/werlabs-js"); got != want {
+	if got, want := m.PathFor(r, "gatekeeper"), Expand("~/src/acme-api"); got != want {
 		t.Errorf("gatekeeper should fall back to the root: got %q, want %q", got, want)
 	}
 }

@@ -8,7 +8,7 @@ func TestNameFromURL(t *testing.T) {
 		"https://github.com/klokie/repoman.git":   "repoman",
 		"https://github.com/klokie/repoman":       "repoman",
 		"https://github.com/klokie/repoman/":      "repoman",
-		"ssh://git@bitbucket.org/werlabs/js.git":  "js",
+		"ssh://git@bitbucket.org/acme/js.git":  "js",
 		"/Volumes/Emperor/git-mirrors/hermes.git": "hermes",
 	}
 	for url, want := range cases {

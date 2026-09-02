@@ -57,7 +57,7 @@ func init() {
 	backupCmd.Flags().StringVar(&backupRepo, "repo", "", "restic repository (default: defaults.restic_repo)")
 	backupCmd.Flags().StringVar(&backupPassFile, "password-file", "", "restic password file (default: defaults.restic_password_file)")
 	backupCmd.Flags().StringSliceVar(&backupTags, "tag", nil, "extra restic tags")
-	backupCmd.Flags().StringSliceVar(&backupSkip, "skip", nil, "repo name globs to leave out (e.g. 'werlabs-*')")
+	backupCmd.Flags().StringSliceVar(&backupSkip, "skip", nil, "repo name globs to leave out (e.g. 'acme-*')")
 	rootCmd.AddCommand(backupCmd)
 }
 

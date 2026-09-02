@@ -17,7 +17,7 @@ var assignCmd = &cobra.Command{
 This is how a repo that lives on one machine gets onto another: assign it, sync
 the manifest, then clone.
 
-  repoman assign werlabs-js hermes
+  repoman assign acme-api hermes
   repoman assign --tag personal
   repoman assign --host metalmark hermes`,
 	Args: cobra.ArbitraryArgs,

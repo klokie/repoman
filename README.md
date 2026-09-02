@@ -52,7 +52,7 @@ On every other machine:
 ```bash
 repoman sync-manifest --init git@github.com:you/manifest.git  # get the shared manifest
 repoman init                                                  # add whatever this host already has
-repoman assign werlabs-js hermes                              # claim repos you want here
+repoman assign acme-api hermes                              # claim repos you want here
 repoman clone                                                 # clone everything assigned but missing
 repoman sync-manifest                                         # share the change
 ```

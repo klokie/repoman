@@ -63,8 +63,8 @@ type Repo struct {
 	Tags   []string `toml:"tags,omitempty"`
 	Status string   `toml:"status,omitempty"`
 	// Paths overrides the location per host, for the repos that do not sit at
-	// <root>/<name> everywhere — werlabs-js is ~/src/werlabs-js on gatekeeper
-	// but ~/Sites/werlabs-js on oleander. Path (no host) still works as a
+	// <root>/<name> everywhere — acme-api is ~/src/acme-api on gatekeeper
+	// but ~/Sites/acme-api on oleander. Path (no host) still works as a
 	// manifest-wide override.
 	Paths map[string]string `toml:"paths,omitempty"`
 }
