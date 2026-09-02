@@ -47,6 +47,12 @@ type Defaults struct {
 	// BackupExclude drops individual paths, for secrets that sit inside a repo
 	// that is otherwise worth keeping. Globs match the ~-contracted path.
 	BackupExclude []string `toml:"backup_exclude,omitempty"`
+	// Retention ladder for `repoman forget`. Zero means "use the built-in
+	// default"; pruning stays a deliberate, separate step either way.
+	KeepLast    int `toml:"keep_last,omitempty"`
+	KeepDaily   int `toml:"keep_daily,omitempty"`
+	KeepWeekly  int `toml:"keep_weekly,omitempty"`
+	KeepMonthly int `toml:"keep_monthly,omitempty"`
 }
 
 type Repo struct {
@@ -108,7 +114,8 @@ func (r Repo) ExpandedPath() string {
 // IsZero reports whether no defaults were set at all.
 func (d Defaults) IsZero() bool {
 	return d.Root == "" && d.AssetsRoot == "" && d.ResticRepo == "" && d.ResticMirror == "" &&
-		d.ResticPasswordFile == "" && len(d.ExtraPaths) == 0 && len(d.BackupSkip) == 0 && len(d.BackupExclude) == 0
+		d.ResticPasswordFile == "" && len(d.ExtraPaths) == 0 && len(d.BackupSkip) == 0 && len(d.BackupExclude) == 0 &&
+		d.KeepLast == 0 && d.KeepDaily == 0 && d.KeepWeekly == 0 && d.KeepMonthly == 0
 }
 
 func (m Manifest) RootDir() string {

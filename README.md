@@ -82,6 +82,7 @@ repoman status    # what is dirty, unpushed, or missing
 | `repoman archive <name>...` | Verify, back up, delete the clone, mark archived (repos or bundles)          |
 | `repoman restore <name>...` | Clone from the remote and restore the untracked half from restic             |
 | `repoman host [name]`       | Show or pin this machine’s manifest identity (`--from <old>` migrates)       |
+| `repoman forget`            | Apply the retention ladder per host; dry run unless `--apply`                |
 | `repoman prune`             | Drop manifest entries whose last host has unassigned them                    |
 
 `init`, `assign` and `clone` never overwrite an entry that another host wrote —
@@ -135,6 +136,18 @@ unpushed commits, a stash, or no remote stops it, and `--force` is required to
 proceed anyway. It also confirms the paths it is about to delete are genuinely
 in the snapshot before removing them, because a backup that silently excluded
 something looks identical to one that worked.
+
+### Retention
+
+```bash
+repoman forget                    # dry run: what the policy would drop
+repoman forget --apply            # forget the references
+repoman forget --apply --prune    # and reclaim the space (irreversible)
+```
+
+Grouped by host, so a machine that backs up often cannot age out another's only
+snapshot. Forgetting and pruning are separate on purpose: the first is
+reversible until the second runs.
 
 ### Sharing the manifest
 
