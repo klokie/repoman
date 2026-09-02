@@ -66,19 +66,23 @@ repoman status    # what is dirty, unpushed, or missing
 
 ## Commands
 
-| Command                    | Description                                                                  |
-| -------------------------- | ---------------------------------------------------------------------------- |
-| `repoman init`             | Scan `~/src` (+ `~/Sites`) and record repos under this host. Safe to re-run. |
-| `repoman status`           | Branch, dirty/clean, unpushed, missing — in parallel. `--problems`, `--host` |
-| `repoman hosts`            | Every host in the manifest and how many repos it carries                     |
-| `repoman assign <repo>...` | Claim repos for this host (`--tag`, `--host`); `unassign` is the inverse     |
-| `repoman clone`            | Clone every active repo assigned here but not present                        |
-| `repoman clone <url>`      | Clone one repo into the root and register it                                 |
-| `repoman pull`             | Fast-forward all active repos in parallel (`--rebase`, `--autostash`, `-j`)  |
-| `repoman sync-manifest`    | Pull/commit/push the manifest; `--init <remote>` attaches a machine to it    |
-| `repoman archive <name>`   | Backup local state, remove clone, mark archived _(planned)_                  |
-| `repoman restore <name>`   | Clone from remote + restore .env from restic _(planned)_                     |
-| `repoman backup`           | Restic snapshot of non-git files _(planned)_                                 |
+| Command                     | Description                                                                  |
+| --------------------------- | ---------------------------------------------------------------------------- |
+| `repoman init`              | Scan `~/src` (+ `~/Sites`) and record repos under this host. Safe to re-run. |
+| `repoman status`            | Branch, dirty/clean, unpushed, missing — in parallel. `--problems`, `--host` |
+| `repoman hosts`             | Every host in the manifest and how many repos it carries                     |
+| `repoman assign <repo>...`  | Claim repos for this host (`--tag`, `--host`); `unassign` is the inverse     |
+| `repoman clone`             | Clone every active repo assigned here but not present                        |
+| `repoman clone <url>`       | Clone one repo into the root and register it                                 |
+| `repoman pull`              | Fast-forward all active repos in parallel (`--rebase`, `--autostash`, `-j`)  |
+| `repoman sync-manifest`     | Pull/commit/push the manifest; `--init <remote>` attaches a machine to it    |
+| `repoman backup`            | Restic snapshot of the state git does not carry                              |
+| `repoman mirror`            | Copy snapshots to a second repo; a no-op when that drive is absent           |
+| `repoman snapshots`         | Latest backup per host; non-zero exit when stale or unreachable              |
+| `repoman archive <name>...` | Verify, back up, delete the clone, mark archived (repos or bundles)          |
+| `repoman restore <name>...` | Clone from the remote and restore the untracked half from restic             |
+| `repoman host [name]`       | Show or pin this machine’s manifest identity (`--from <old>` migrates)       |
+| `repoman prune`             | Drop manifest entries whose last host has unassigned them                    |
 
 `init`, `assign` and `clone` never overwrite an entry that another host wrote —
 a repo already in the manifest just gains a host. The manifest is written sorted
@@ -118,6 +122,19 @@ collision, which would file that machine's repos under a second identity. Run
 `repoman host oleander` once per machine; the pin lives in `<config>/host` and
 is excluded from the shared repo. `--from <old>` moves entries already filed
 under the wrong name.
+
+### Archiving
+
+```bash
+repoman archive enliven          # a bundle: its repos + ~/projects/enliven
+repoman restore enliven          # months later
+```
+
+`archive` will not delete a clone the remote cannot replace — a dirty tree,
+unpushed commits, a stash, or no remote stops it, and `--force` is required to
+proceed anyway. It also confirms the paths it is about to delete are genuinely
+in the snapshot before removing them, because a backup that silently excluded
+something looks identical to one that worked.
 
 ### Sharing the manifest
 
@@ -159,8 +176,9 @@ as `manifest.local.toml` rather than clobbering either side — re-run
 - [x] `repoman pull` — parallel git pull
 - [x] `repoman assign` / `unassign` — move repos between hosts
 - [x] Multi-machine manifest sync (`sync-manifest`)
-- [ ] Restic integration (backup/archive/restore) — repo on an always-on host
-- [ ] Bundles (repos + `~/projects` assets as one unit)
+- [x] Restic integration — `backup`, `mirror`, `snapshots`
+- [x] `archive` / `restore` with pre-delete verification
+- [x] Bundles (repos + `~/projects` assets as one unit)
 - [ ] TUI (bubbletea)
 
 ## License
