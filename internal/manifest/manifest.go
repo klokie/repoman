@@ -13,6 +13,18 @@ import (
 type Manifest struct {
 	Defaults Defaults `toml:"defaults"`
 	Repos    []Repo   `toml:"repos"`
+	Bundles  []Bundle `toml:"bundles,omitempty"`
+}
+
+// A Bundle groups repos with the non-git asset directory that belongs to the
+// same project, so a client engagement can be shelved and brought back as one
+// unit instead of six separate operations.
+type Bundle struct {
+	Name   string   `toml:"name"`
+	Repos  []string `toml:"repos,omitempty"`
+	Assets string   `toml:"assets,omitempty"` // relative to assets_root
+	Tags   []string `toml:"tags,omitempty"`
+	Status string   `toml:"status,omitempty"`
 }
 
 type Defaults struct {
@@ -168,6 +180,28 @@ func (m Manifest) Hosts() []string {
 	}
 	sort.Strings(hosts)
 	return hosts
+}
+
+// FindBundle returns the index of a bundle by name, or -1.
+func (m Manifest) FindBundle(name string) int {
+	for i, b := range m.Bundles {
+		if b.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// AssetsDir resolves a bundle's asset directory, or "" when it has none.
+func (m Manifest) AssetsDir(b Bundle) string {
+	if b.Assets == "" {
+		return ""
+	}
+	root := m.Defaults.AssetsRoot
+	if root == "" {
+		root = "~/projects"
+	}
+	return filepath.Join(Expand(root), b.Assets)
 }
 
 // Find returns the index of a repo by name, or -1.

@@ -49,7 +49,7 @@ var neverBackup = []string{
 	"node_modules", ".git", ".next", ".nuxt", "dist", "build", "coverage",
 	"vendor", ".venv", "venv", "__pycache__", ".turbo", ".cache", ".nx",
 	"target", "Pods", ".terraform", ".gradle", ".DS_Store",
-	"cache", "audio_cache", "tmp",
+	"audio_cache",
 }
 
 func init() {
