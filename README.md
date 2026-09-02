@@ -17,7 +17,7 @@ Cloud sync tools (Google Drive, iCloud, Dropbox, Syncthing) and git repos don't 
 ## Install
 
 ```bash
-go install github.com/klokie/repoman@latest
+go install github.com/klokie/repoman/cmd/repoman@latest
 ```
 
 Or from a local clone:
