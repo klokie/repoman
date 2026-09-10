@@ -21,6 +21,18 @@ func git(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// runGit is git() for the cases that need the output rather than the assertion.
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	c := exec.Command("git", args...)
+	c.Dir = dir
+	out, err := c.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return string(out)
+}
+
 // newClonedRepo builds a repo with a bare remote and one pushed commit.
 func newClonedRepo(t *testing.T) (path, remote string) {
 	t.Helper()
