@@ -89,6 +89,15 @@ repoman status    # what is dirty, unpushed, or missing
 a repo already in the manifest just gains a host. The manifest is written sorted
 and atomically, so two machines editing different repos merge cleanly in git.
 
+When two hosts do edit the same line, `sync-manifest` resolves it on meaning
+rather than text: `hosts` is membership, so a host that let go of a repo wins
+over one that kept it, while the `[defaults]` lists (`extra_paths`,
+`backup_skip`, `backup_exclude`) are configuration and get unioned — an entry is
+only dropped when a host actually deletes one it already had. Afterwards the
+sync checks that the merge kept this host's own additions, and fails loudly
+without pushing if any went missing, rather than reporting a green tick for a
+path that never reached the backup.
+
 ## Manifest
 
 Repoman uses a TOML manifest at `~/.config/repoman/manifest.toml`:

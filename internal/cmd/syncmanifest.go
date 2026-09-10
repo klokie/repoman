@@ -50,6 +50,7 @@ func runSyncManifest(cmd *cobra.Command, args []string) error {
 	// which is how an unparseable manifest once reached every host. Committing
 	// first turns the same situation into an ordinary rebase git can either
 	// merge or halt on.
+	localCommit := ""
 	if gitx.IsDirty(dir) {
 		if err := gitx.Run(dir, "add", "-A"); err != nil {
 			return err
@@ -58,6 +59,14 @@ func runSyncManifest(cmd *cobra.Command, args []string) error {
 		if err := gitx.Run(dir, "commit", "-m", msg); err != nil {
 			return err
 		}
+		// Remembered so the merge can be audited below: a rebase that resolves
+		// to the upstream tree drops this commit without erroring, and the sha
+		// is what the edit can be recovered from afterwards.
+		sha, err := gitx.Output(dir, "rev-parse", "HEAD")
+		if err != nil {
+			return err
+		}
+		localCommit = strings.TrimSpace(sha)
 		fmt.Printf("  %s committed local changes\n", green("✓"))
 	} else {
 		fmt.Printf("  %s no local changes\n", dim("·"))
@@ -78,6 +87,22 @@ func runSyncManifest(cmd *cobra.Command, args []string) error {
 	// Belt and braces: never push something no host can parse.
 	if _, err := manifest.Load(); err != nil {
 		return fmt.Errorf("manifest is not parseable after the pull — resolve it by hand, then re-run: %w", err)
+	}
+
+	// Nor report success for a sync that quietly threw this host's edit away.
+	if localCommit != "" {
+		lost, err := lostLocalEdits(dir, localCommit)
+		if err != nil {
+			fmt.Printf("  %s could not verify the merge kept this host's edit: %v\n", yellow("!"), err)
+		} else if len(lost) > 0 {
+			fmt.Printf("\n%s the merge dropped this host's edit — NOT pushing:\n", red("✗"))
+			for _, l := range lost {
+				fmt.Printf("    %s\n", l)
+			}
+			fmt.Printf("\n  Recover it with: git -C %s show %s -- %s\n", dir, localCommit[:8], manifestFile)
+			fmt.Printf("  Then re-apply the change and run sync-manifest again.\n")
+			return fmt.Errorf("lost %d local manifest change(s) in the merge", len(lost))
+		}
 	}
 
 	if err := gitx.Run(dir, "push"); err != nil {
@@ -141,6 +166,37 @@ func resolveManifestConflict(dir string) (bool, error) {
 		return false, fmt.Errorf("continuing the rebase: %w", err)
 	}
 	return true, nil
+}
+
+// lostLocalEdits compares the commit this host just made against the tree the
+// merge produced, and reports anything it added that did not survive. The
+// commit stays reachable by sha after a rebase drops it, so both it and the
+// base it was written against can still be read.
+func lostLocalEdits(dir, sha string) ([]string, error) {
+	at := func(rev string) (manifest.Manifest, error) {
+		out, err := gitx.Output(dir, "show", rev+":"+manifestFile)
+		if err != nil {
+			return manifest.Manifest{}, nil // no such tree: treat as an empty manifest
+		}
+		return manifest.Parse([]byte(out))
+	}
+	local, err := at(sha)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", sha[:8], err)
+	}
+	base, err := at(sha + "^")
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s^: %w", sha[:8], err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, manifestFile))
+	if err != nil {
+		return nil, err
+	}
+	final, err := manifest.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	return manifest.LostAdditions(base, local, final), nil
 }
 
 // appendExclude adds a pattern to .git/info/exclude (local-only ignores).

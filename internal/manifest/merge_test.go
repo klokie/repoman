@@ -1,6 +1,9 @@
 package manifest
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func hostsOf(m Manifest, name string) []string {
 	i := m.Find(name)
@@ -98,5 +101,120 @@ func TestEncodeParseRoundTrip(t *testing.T) {
 	}
 	if got.Repos[0].PathOn("gatekeeper") != "~/Sites/x" {
 		t.Errorf("round trip lost the path override: %s", data)
+	}
+}
+
+func joined(xs []string) string { return strings.Join(xs, ",") }
+
+// The reported loss: two hosts add a different path to extra_paths, and the
+// side that syncs second used to have its addition dropped on the floor —
+// with the backup silently not covering it.
+func TestMerge3UnionsConcurrentExtraPaths(t *testing.T) {
+	d := func(paths ...string) Defaults { return Defaults{Root: "~/src", ExtraPaths: paths} }
+	base := Manifest{Defaults: d("~/.hermes", "~/.config/repoman")}
+	ours := Manifest{Defaults: d("~/.hermes", "~/.config/repoman", "~/from-remote")}
+	theirs := Manifest{Defaults: d("~/.hermes", "~/.config/repoman", "~/from-local")}
+
+	got := Merge3(base, ours, theirs).Defaults.ExtraPaths
+	if want := "~/.hermes,~/.config/repoman,~/from-local,~/from-remote"; joined(got) != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// Both hosts must compute the same list whichever side they call "ours",
+// or every later sync churns the line back and forth.
+func TestMerge3ExtraPathsMergeIsSymmetric(t *testing.T) {
+	d := func(paths ...string) Defaults { return Defaults{ExtraPaths: paths} }
+	base := Manifest{Defaults: d("~/a")}
+	x := Manifest{Defaults: d("~/a", "~/x")}
+	y := Manifest{Defaults: d("~/a", "~/y")}
+
+	if a, b := Merge3(base, x, y), Merge3(base, y, x); joined(a.Defaults.ExtraPaths) != joined(b.Defaults.ExtraPaths) {
+		t.Errorf("%v != %v", a.Defaults.ExtraPaths, b.Defaults.ExtraPaths)
+	}
+}
+
+// Union must not resurrect an entry a host deliberately deleted.
+func TestMerge3ExtraPathsRemovalStillWins(t *testing.T) {
+	base := Manifest{Defaults: Defaults{ExtraPaths: []string{"~/a", "~/gone"}}}
+	ours := Manifest{Defaults: Defaults{ExtraPaths: []string{"~/a", "~/gone"}}}
+	theirs := Manifest{Defaults: Defaults{ExtraPaths: []string{"~/a"}}}
+
+	if got := Merge3(base, ours, theirs).Defaults.ExtraPaths; joined(got) != "~/a" {
+		t.Errorf("got %v, want ~/a", got)
+	}
+}
+
+func TestMerge3DefaultsScalarChangeOnEitherSide(t *testing.T) {
+	base := Manifest{Defaults: Defaults{Root: "~/src", ResticRepo: "old", KeepDaily: 7}}
+	ours := Manifest{Defaults: Defaults{Root: "~/src", ResticRepo: "old", KeepDaily: 14}}
+	theirs := Manifest{Defaults: Defaults{Root: "~/src", ResticRepo: "new", KeepDaily: 7}}
+
+	got := Merge3(base, ours, theirs).Defaults
+	if got.ResticRepo != "new" {
+		t.Errorf("restic_repo = %q, want the changed side", got.ResticRepo)
+	}
+	if got.KeepDaily != 14 {
+		t.Errorf("keep_daily = %d, want 14", got.KeepDaily)
+	}
+}
+
+// Bundles used to be dropped entirely by any semantic merge.
+func TestMerge3KeepsBundles(t *testing.T) {
+	base := Manifest{Bundles: []Bundle{{Name: "acme"}}}
+	ours := Manifest{Bundles: []Bundle{{Name: "acme"}, {Name: "from-remote"}}}
+	theirs := Manifest{Bundles: []Bundle{{Name: "acme"}, {Name: "from-local"}}}
+
+	got := Merge3(base, ours, theirs).Bundles
+	if len(got) != 3 {
+		t.Fatalf("got %v, want all three bundles", got)
+	}
+}
+
+func TestLostAdditionsFindsDroppedExtraPath(t *testing.T) {
+	base := Manifest{Defaults: Defaults{ExtraPaths: []string{"~/a"}}}
+	local := Manifest{Defaults: Defaults{ExtraPaths: []string{"~/a", "~/mine"}}}
+	final := Manifest{Defaults: Defaults{ExtraPaths: []string{"~/a", "~/theirs"}}}
+
+	lost := LostAdditions(base, local, final)
+	if len(lost) != 1 || !strings.Contains(lost[0], "~/mine") {
+		t.Errorf("got %v, want the dropped path reported", lost)
+	}
+}
+
+func TestLostAdditionsQuietOnAGoodMerge(t *testing.T) {
+	base := Manifest{
+		Defaults: Defaults{ExtraPaths: []string{"~/a"}},
+		Repos:    []Repo{{Name: "x", Hosts: []string{"gatekeeper"}}},
+	}
+	local := Manifest{
+		Defaults: Defaults{ExtraPaths: []string{"~/a", "~/mine"}},
+		Repos:    []Repo{{Name: "x", Hosts: []string{"gatekeeper", "metalmark"}}},
+	}
+	final := Merge3(base, Manifest{
+		Defaults: Defaults{ExtraPaths: []string{"~/a", "~/theirs"}},
+		Repos:    []Repo{{Name: "x", Hosts: []string{"gatekeeper", "oleander"}}},
+	}, local)
+
+	if lost := LostAdditions(base, local, final); len(lost) != 0 {
+		t.Errorf("nothing was lost, got %v", lost)
+	}
+}
+
+// A repo the other host pruned, or a value it deliberately changed, is a
+// resolved conflict rather than a silent drop.
+func TestLostAdditionsIgnoresDeliberateResolutions(t *testing.T) {
+	base := Manifest{
+		Defaults: Defaults{ResticRepo: "old"},
+		Repos:    []Repo{{Name: "x", Hosts: []string{"gatekeeper"}}},
+	}
+	local := Manifest{
+		Defaults: Defaults{ResticRepo: "mine"},
+		Repos:    []Repo{{Name: "x", Hosts: []string{"gatekeeper"}}},
+	}
+	final := Manifest{Defaults: Defaults{ResticRepo: "theirs"}} // repo pruned there
+
+	if lost := LostAdditions(base, local, final); len(lost) != 0 {
+		t.Errorf("got %v, want nothing reported", lost)
 	}
 }
