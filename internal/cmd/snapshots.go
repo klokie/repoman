@@ -99,13 +99,7 @@ func runSnapshots(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	hosts := m.Hosts()
-	for h := range latest {
-		if !contains(hosts, h) {
-			hosts = append(hosts, h)
-		}
-	}
-	sort.Strings(hosts)
+	hosts := snapshotHostsToCheck(m)
 
 	fmt.Printf("  %-14s %-10s %-22s %s\n", dim("HOST"), dim("SNAPSHOT"), dim("LATEST"), dim("AGE"))
 	stale := 0
@@ -133,13 +127,27 @@ func runSnapshots(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func contains(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
+func snapshotHostsToCheck(m manifest.Manifest) []string {
+	// The active manifest is the source of truth for hosts that must keep
+	// backing up. Restic deliberately retains snapshots from retired machines,
+	// and archived repo records preserve their old host assignments. Neither
+	// should turn a successful retirement into a permanent stale-backup alert.
+	seen := map[string]bool{}
+	var hosts []string
+	for _, r := range m.Repos {
+		if r.IsArchived() {
+			continue
+		}
+		for _, h := range r.Hosts {
+			h = strings.ToLower(h)
+			if !seen[h] {
+				seen[h] = true
+				hosts = append(hosts, h)
+			}
 		}
 	}
-	return false
+	sort.Strings(hosts)
+	return hosts
 }
 
 func formatAge(d time.Duration) string {
